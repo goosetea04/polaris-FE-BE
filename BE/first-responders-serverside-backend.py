@@ -1,6 +1,9 @@
-import sys, os
+import os
+import sys
+import mapbox
 import pandas as pd
-from bs4 import BeautifulSoup as bs
+import json
+import tabulate
 from newsapi import NewsApiClient
 import requests
 from langchain.llms import openai
@@ -12,10 +15,12 @@ from langchain.prompts import PromptTemplate
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import osmnx as ox
+import numpy
 from geopy.geocoders import Nominatim
 import geopandas as gpd
-
 from dotenv import load_dotenv
+
+load_dotenv()
 
 app = FastAPI()
 
@@ -37,9 +42,70 @@ class tds_twit_agent(BaseModel):
     location : str = Field(description="")
     status : str = Field(description="")
 
+class tds_rec_agent(BaseModel):
+    vehicle_advice : str = Field(description="")
+    clothing_advice : str = Field(description="")
+    general_advice : str = Field(description="")
+
 # TEMPLATES
 parser_data_agent = JsonOutputParser(pydantic_object=tds_data_agent)
 parser_twit_agent = JsonOutputParser(pydantic_object=tds_twit_agent)
+parser_rec_agent = JsonOutputParser(pydantic_object=tds_rec_agent)
+tmplt_rec_agent = """
+---
+You are an advanced information extraction assistant specializing in analyzing articles about natural disasters. Your task is to extract specific data fields from the provided JSON article and structure them into the `tds_data_agent` schema. Carefully follow the instructions and requirements below to ensure accuracy and completeness.
+
+Use the following format instructions:
+{format_instructions}
+---
+
+### INPUT FORMAT  
+You will receive an article in JSON format with the following fields:  
+
+- `twitter insight` : is a bunch of twitter posts stored in Markdown format : {twitter_insight}
+
+---
+
+### TASK INSTRUCTIONS 
+
+1. **Analyze for Disaster Context**:  
+   Each field in the `OUTPUT FORMAT` must correspond to the type of natural disaster(s) described in the `twitter_insight` content. Look for:
+   - The type of disaster (e.g., flood, wildfire, earthquake, hurricane).
+   - How the disaster affects mobility, clothing needs, and general survival recommendations.
+
+2. **Field-Specific Extraction Guidance**:
+   - **Vehicle Advice**:  
+     Assess the disaster context and identify the most suitable type of land vehicle for navigation or evacuation (e.g., 4-Wheeler large vehicles for floods, container trucks for large-scale evacuation, small vehicles for tight or debris-filled spaces, or motorbikes for areas with limited road access).  
+     Include only practical suggestions that match the disaster conditions.
+
+   - **Clothing Advice**:  
+     Extract clothing recommendations based on the environmental conditions created by the disaster. Examples include:
+       - Warm clothes for cold-weather disasters (e.g., blizzards).
+       - Fireproof clothes for wildfires.
+       - Waterproof clothes for floods or heavy rains.  
+     Prioritize functional and protective clothing relevant to survival in the described disaster.
+
+   - **General Advice**:  
+     Provide concise and practical recommendations addressing the unpredictability, speed, or severity of the disaster. For instance:
+       - Alerting users about sudden changes (e.g., rapidly spreading wildfires).
+       - Highlighting life-threatening risks (e.g., flash floods).
+       - Advising on preparedness for specific outcomes (e.g., power outages, supply shortages).  
+     This should be no more than **2 sentences** to maintain clarity and focus.
+
+---
+
+### OUTPUT FORMAT TEMPLATE  
+
+{{
+    "vehicle_advice": "{{Type of land vehicle recommendation according to disaster described (e.g., 4-Wheeler large vehicle, 4-Wheeler container trucks, small vehicles, motorbikes)}}",
+    "clothing_advice": "{{General clothing advice according to disaster described (e.g., Warm clothes, Fire-proof clothes, Water-proof clothes)}}",
+    "general_advice": "{{General advice for users to take into account regarding the disaster. How unpredictable the disaster is, potential for loss of life, how fast the disaster spreads, etc. *No more than 2 sentences*}}",
+}}
+
+---
+
+By following these instructions, you will accurately extract all necessary information for the `tds_rec_agent` schema and provide high-quality, structured data.
+"""
 
 tmplt_data_agent = """
 ---
@@ -123,7 +189,7 @@ Using the provided JSON article, extract the following fields and map them to th
 
 ---
 
-By following these instructions, you will accurately extract all necessary information for the `tds_data_agent` schema and provide high-quality, structured data.
+By following these instructions, you will accurately extract all necessary information for the `tds_rec_agent` schema and provide high-quality, structured data.
 """
 
 tmplt_twit_agent = """
@@ -177,14 +243,14 @@ LANGSMITH_ENDPOINT = "https://api.smith.langchain.com"
 LANGSMITH_API_KEY = os.getenv("LANGSMITH_API_KEY")
 LANGSMITH_PROJECT = "CMUQ-HACK-25-FR"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-api = NewsApiClient(api_key=os.getenv("NEWS_API_KEY"))
+api = NewsApiClient(api_key=os.getenv("NEWS_API_KEY")
 
 # GET DANGER ZONE LOCATION + DUMMY DATA
 url_endpoint = "https://newsapi.org/v2/everything"
 params = {
     "q": "bushfire AND today",
     "domains": "environment.gov.au,theconversation.com/au,australiangeographic.com.au,climate.gov,skynews.com.au,theaustralian.com.au,9news.com.au,bbc.co.uk/weather,theage.com.au,bom.gov.au,abc.net.au,news.com.au,smh.com.au",
-    "apiKey": os.getenv("NEWS_API_KEY")
+    "apiKey": "556b220a5e674f0a9c14d324bd81f9da"
 }
 
 # Make the request
@@ -292,7 +358,7 @@ model = ChatOpenAI(
     model_name = "gpt-4o-mini",
     temperature = 0.2,
     max_tokens = 16384,
-    openai_api_key = os.getenv("OPENAI_API_KEY")
+    openai_api_key = OPENAI_API_KEY
 )
 
 # AI CALL
@@ -318,9 +384,11 @@ with get_openai_callback() as cb:
             outputs.append(output)
         num_articles += 1
 
+        # Max of 5 articles (for MVP - token usage limiting)
         if num_articles > 5:
             break
     
+    # Analyze twitter and ensure correlation with Government insight
     prompt_twitter_agent = PromptTemplate(
             template=tmplt_twit_agent,
             input_variables=[],
@@ -333,12 +401,26 @@ with get_openai_callback() as cb:
     
     chain_twit_agent = prompt_twitter_agent | model | parser_twit_agent
     output_twit = chain_twit_agent.invoke({})
+
+    # OUTPUTS TO DF
+    o_df = pd.DataFrame(outputs)
+    o_twit_df = pd.DataFrame(output_twit)
+
+    prompt_rec_agent = PromptTemplate(
+            template=tmplt_rec_agent,
+            input_variables=[],
+            partial_variables={
+                "format_instructions" : parser_rec_agent.get_format_instructions(),
+                "twitter_insight" : o_twit_df.to_markdown(),
+                "news_insight" : o_df.to_markdown()
+            }
+        )
+    
+    chain_rec_agent = prompt_rec_agent | model | parser_rec_agent
+    output_rec = chain_rec_agent.invoke({})
+
     print(cb)
 
-
-# OUTPUTS TO DF
-o_df = pd.DataFrame(outputs)
-o_twit_df = pd.DataFrame(output_twit)
 
 
 # CREATE .geojson
@@ -349,22 +431,32 @@ polygons_dict = {
 }
 
 for addy in o_df['location']:
-    polygon = ox.geocode_to_gdf(addy)
-    polygons_dict['news'].append(polygon)
+    try:
+        polygon = ox.geocode_to_gdf(addy)
+        polygons_dict['news'].append(polygon)
+    except:
+        continue
 
 for addy in o_twit_df['location']:
-    polygon = ox.geocode_to_gdf(addy)
-
-    # Save the polygon as a GeoJSON file
-    polygons_dict['twitter'].append(polygon)
+    try:
+        polygon = ox.geocode_to_gdf(addy)
+        polygons_dict['twitter'].append(polygon)
+    except:
+        continue
 
 for addy in dummy_government_addys:
-    polygon = ox.geocode_to_gdf(addy)
-
-    polygons_dict['gov'].append(polygon)
+    try:
+        polygon = ox.geocode_to_gdf(addy)
+        polygons_dict['gov'].append(polygon)
+    except:
+        continue
 
 # Save the polygon as a GeoJSON file
 for i in range(3):
     polygons_gdf = gpd.GeoDataFrame(pd.concat(polygons_dict['gov'], ignore_index=True))
 
 polygons_gdf.to_file("polygons.geojson", driver="GeoJSON")
+
+# AI ADVICE TO .txt JSON FORMAT
+with open("ai_adivce.txt", 'w') as f:
+    f.write(json.dumps(output_rec, indent=4))
