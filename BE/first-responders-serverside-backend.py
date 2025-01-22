@@ -243,14 +243,14 @@ LANGSMITH_ENDPOINT = "https://api.smith.langchain.com"
 LANGSMITH_API_KEY = os.getenv("LANGSMITH_API_KEY")
 LANGSMITH_PROJECT = "CMUQ-HACK-25-FR"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-api = NewsApiClient(api_key=os.getenv("NEWS_API_KEY")
+api = NewsApiClient(api_key=os.getenv("NEWS_API_KEY"))
 
 # GET DANGER ZONE LOCATION + DUMMY DATA
 url_endpoint = "https://newsapi.org/v2/everything"
 params = {
     "q": "bushfire AND today",
     "domains": "environment.gov.au,theconversation.com/au,australiangeographic.com.au,climate.gov,skynews.com.au,theaustralian.com.au,9news.com.au,bbc.co.uk/weather,theage.com.au,bom.gov.au,abc.net.au,news.com.au,smh.com.au",
-    "apiKey": "556b220a5e674f0a9c14d324bd81f9da"
+    "apiKey": api_key=os.getenv("NEWS_API_KEY")
 }
 
 # Make the request
