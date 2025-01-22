@@ -40,7 +40,9 @@ The dummy username is "gusti.fatu@gmail.com" and the password is "12341234"
 3. Log in with the dummy account
 3. click on the desired destination
 4. click 'navigate'
-5. routing should show and this will update based on the danger zones prescribed by the backend every 60 seconds
+5. In BE, add a .env file and populate with these variables: `LANGSMITH_API_KEY`, `OPENAI_API_KEY`, `NEWS_API_KEY`
+6. In FE, add a .env file and populate with these variables: `NEXT_PUBLIC_MAPBOX_PUBLIC_KEY`, `NEXT_MAPBOX_SECRET_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_ENVIRONMENT`
+6. routing should show and this will update based on the danger zones prescribed by the backend every 60 seconds
 
 - There is also a destination input to set destination coordinates to a predefined place
 - You will notice there is a bar notifying workers on whether a crisis is ongoing in the immediate area
