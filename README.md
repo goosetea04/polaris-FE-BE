@@ -48,7 +48,7 @@ The dummy username is "gusti.fatu@gmail.com" and the password is "12341234"
 - A tracker of other organizations are also displayed. This is done with the aim of ensuring that relief efforts are well distributed.
 
 ## Credits
-- **Development Team:** [Gusti Rais, Yousef Yaser, Gama Rais, Omar]
+- **Development Team:** [Gusti Rais, Yousef Fares, Gama Rais, Omar]
 - **Tools and Technologies:**
   - Map services (e.g., Nominatim, OpenStreetMap).
   - Backend framework (e.g., python).
