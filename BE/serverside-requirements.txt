@@ -1,0 +1,16 @@
+os
+mapbox
+pandas
+python-dotenv
+tabulate
+newsapi-python
+requests
+langchain-community
+langchain-openai
+pydantic
+fastapi
+uvicorn
+osmnx
+geopy
+geopandas
+numpy
