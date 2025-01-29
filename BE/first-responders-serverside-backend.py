@@ -1,8 +1,8 @@
-import sys
 import os
 import mapbox
 import pandas as pd
 import json
+from dotenv import load_dotenv
 import asyncio
 import tabulate
 from newsapi import NewsApiClient
@@ -22,6 +22,8 @@ from contextlib import asynccontextmanager
 import numpy
 from geopy.geocoders import Nominatim
 import geopandas as gpd
+
+load_dotenv()
 
 class updated_data():
     polygons = {}
