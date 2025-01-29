@@ -10,7 +10,7 @@ langchain-community
 langchain_core
 time
 fastapi
-contextlib
+python-dotenv
 osmnx
 numpy
 geopy
