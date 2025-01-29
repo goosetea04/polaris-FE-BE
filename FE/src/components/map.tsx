@@ -10,6 +10,7 @@ import { DangerZone,
   View,  
   Coordinates } from '@/Types';
 import { FeatureCollection, Point } from "geojson";
+import { distance, booleanPointInPolygon } from '@turf/turf';
 import { polygon, pointGrid, bbox} from '@turf/turf'
 
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_PUBLIC_KEY || ''
@@ -25,6 +26,7 @@ export default function Map({ setDestinationCoords, destinationCoords }: MapProp
   const map = useRef<mapboxgl.Map | null>(null)
   const draw = useRef<MapboxDraw | null>(null)
   const destinationMarker = useRef<mapboxgl.Marker | null>(null)
+  
   
   const [isFetching, setIsFetching] = useState(false);
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null)
@@ -121,19 +123,23 @@ export default function Map({ setDestinationCoords, destinationCoords }: MapProp
 
   const generateExclusionPoints = async (
     zone: DangerZone,
-    density: number = 20
+    density: number = 5
   ): Promise<string[]> => {
     const poly = polygon(zone.coordinates);
     const bounds = poly.geometry.coordinates[0];
     const points: [number, number][] = [];
   
-    // Generate boundary points
+    // 1. Generate boundary points with dynamic density
     bounds.forEach((coord, i) => {
       if (i < bounds.length - 1) {
-        const start = bounds[i];
+        const start = coord;
         const end = bounds[i + 1];
-        for (let j = 0; j <= density; j++) {
-          const ratio = j / density;
+        
+        const edgeLength = distance(start, end, { units: 'meters' });
+        const stepCount = Math.ceil(edgeLength / density); // Points every 5m
+  
+        for (let j = 0; j <= stepCount; j++) {
+          const ratio = j / stepCount;
           const lon = start[0] + (end[0] - start[0]) * ratio;
           const lat = start[1] + (end[1] - start[1]) * ratio;
           points.push([lon, lat]);
@@ -141,60 +147,49 @@ export default function Map({ setDestinationCoords, destinationCoords }: MapProp
       }
     });
   
-    // Calculate the bounding box for the polygon
-    const boundingBox = bbox(poly);
+    // 2. Generate sparser grid points inside polygon
+    
   
-    // Generate grid points inside the polygon
-    const gridPoints = pointGrid(boundingBox, density / 1000, { units: "kilometers" });
-    gridPoints.features.forEach((feature) => {
-      const [lon, lat] = feature.geometry.coordinates;
-      points.push([lon, lat]);
-    });
-  
-    console.log("Generated raw points:", points);
-  
+    // 3. Spatial deduplication using precision-based hashing
     const snappedPoints: string[] = [];
-    const roadPointCount: Record<string, number> = {};
-  
-    // Process points in chunks to avoid exceeding API limits
-    for (let i = 0; i < points.length; i += 50) {
-      const chunk = points.slice(i, i + 50);
-      try {
-        const response = await fetch(
-          `https://api.mapbox.com/matching/v5/mapbox/driving/${chunk
-            .map(([lon, lat]) => `${lon},${lat}`)
-            .join(";")}?access_token=${mapboxgl.accessToken}&geometries=geojson`
-        );
-  
-        const data = await response.json();
-  
-        if (data.code === "Ok" && data.tracepoints) {
-          data.tracepoints.forEach((tracepoint: any, index: number) => {
-            if (tracepoint) {
-              const { location, matchings } = tracepoint;
-              const roadName = matchings?.[0]?.name || `unknown-${index}`;
-  
-              if (!roadPointCount[roadName]) roadPointCount[roadName] = 0;
-  
-              // Limit to 2 points per road
-              if (roadPointCount[roadName] < 2) {
-                roadPointCount[roadName]++;
-                snappedPoints.push(`point(${location[0]} ${location[1]})`);
-              }
-            } else {
-              //console.warn(`Tracepoint at index ${index} is null.`);
+  const grid = new Set<string>();
+  const precision = 5; // ~1m precision (5 decimal places)
+
+  // Process points in smaller chunks
+  for (let i = 0; i < points.length; i += 100) {
+    const chunk = points.slice(i, i + 100);
+    try {
+      const response = await fetch(
+        `https://api.mapbox.com/matching/v5/mapbox/driving/${chunk
+          .map(([lon, lat]) => `${lon},${lat}`)
+          .join(";")}?access_token=${mapboxgl.accessToken}&geometries=geojson&radiuses=${Array(chunk.length).fill(25).join(";")}`
+      );
+
+      const data = await response.json();
+      if (data.code === "Ok" && data.tracepoints) {
+        data.tracepoints.forEach((tracepoint: any) => {
+          if (tracepoint?.location) {
+            const [lon, lat] = tracepoint.location;
+            
+            // Create more precise spatial hash
+            const latKey = Math.round(lat * 10 ** precision);
+            const lonKey = Math.round(lon * 10 ** precision);
+            const key = `${latKey}|${lonKey}`;
+
+            if (!grid.has(key)) {
+              grid.add(key);
+              snappedPoints.push(`point(${lon} ${lat})`);
             }
-          });
-        } else {
-          console.warn("Map Matching API returned no matches or an error:", data.message || data);
-        }
-      } catch (err) {
-        console.error("Error fetching Map Matching API:", err);
+          }
+        });
       }
+    } catch (err) {
+      console.error("Error processing points chunk:", err);
     }
-    return snappedPoints;
-  };
-  
+  }
+
+  return snappedPoints;
+};
   
 
   // Place a marker when destinationCoords changes
@@ -320,6 +315,7 @@ export default function Map({ setDestinationCoords, destinationCoords }: MapProp
         }).filter((zone): zone is DangerZone => zone !== null);
 
         setDangerZones(prev => [...prev, ...newZones]);
+        setIsDrawingMode("Map"); 
       });
         
   
@@ -480,11 +476,16 @@ export default function Map({ setDestinationCoords, destinationCoords }: MapProp
   }
   
   const toggleDrawingMode = () => {
-    setIsDrawingMode(isDrawingMode === "Map" ? "Draw":"Map");
+    const newMode = isDrawingMode === "Map" ? "Draw" : "Map";
+    setIsDrawingMode(newMode);
     if (draw.current) {
-      draw.current.changeMode(isDrawingMode === "Draw" ? 'simple_select' : 'draw_polygon' as string);
+      // Use the correct mode strings without type assertion
+      if (newMode === "Draw") {
+        draw.current.changeMode('draw_polygon');
+      } else {
+        draw.current.changeMode('simple_select');
+      }
     }
-    console.log(isDrawingMode, draw.current?.getMode());
   };
   
   if (loading) {

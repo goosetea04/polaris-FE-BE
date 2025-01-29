@@ -1,9 +1,8 @@
-// components/sidebar.tsx
 "use client"
 import React, { useState } from "react";
-import { useRouter } from 'next/navigation';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { User } from '@supabase/supabase-js';
+import { useRouter } from "next/navigation";
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { User } from "@supabase/supabase-js";
 
 interface SidebarProps {
     setDestinationCoords: (coords: [number, number] | null) => void;
@@ -19,152 +18,139 @@ export default function Sidebar({ setDestinationCoords, user }: SidebarProps) {
 
     const handleSignOut = async () => {
         await supabase.auth.signOut();
-        router.push('/auth/signin');
+        router.push("/auth/signin");
     };
 
     const handleSignIn = () => {
-        router.push('/auth/signin');
+        router.push("/auth/signin");
     };
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setLocation(e.target.value);
     };
 
-    const geocodeLocation = async (address: string) => {
-        try {
-            const url = `https://nominatim.openstreetmap.org/search?q=${address}&format=json&limit=5`;
-            const response = await fetch(url);
-            const data = await response.json();
-
-            if (data && data.length > 0) {
-                const formattedResults = data.map((item: any) => ({
-                    display_name: item.display_name,
-                    coords: [parseFloat(item.lon), parseFloat(item.lat)] as [number, number],
-                }));
-                return formattedResults;
-            } else {
-                throw new Error("Location not found");
-            }
-        } catch (error) {
-            console.error("Geocoding error:", error);
-            alert("Error finding location. Please try again.");
-            return [];
-        }
-    };
-
     const handleNavigate = async () => {
-        console.log(user)
         setError("");
         if (location.trim()) {
-            const coordsList = await geocodeLocation(location);
-            if (coordsList.length > 0) {
-                setResults(coordsList);
-            } else {
-                setError("No locations found for your search. Please refine your query.");
+            const url = `https://nominatim.openstreetmap.org/search?q=${location}&format=json&limit=5`;
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                if (data.length > 0) {
+                    setResults(
+                        data.map((item: any) => ({
+                            display_name: item.display_name,
+                            coords: [parseFloat(item.lon), parseFloat(item.lat)] as [number, number],
+                        }))
+                    );
+                } else {
+                    setError("No locations found. Please refine your search.");
+                }
+            } catch {
+                setError("Error finding location. Try again.");
             }
         } else {
             setError("Please enter a destination.");
         }
     };
 
-    const handleSelectLocation = (coords: [number, number]) => {
-        setDestinationCoords(coords);
-        setResults([]);
-        setLocation("");
-    };
-
-    const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
-        if (e.key === "Enter") {
-            handleNavigate();
-        }
-    };
-
     return (
-        <div className="flex flex-col h-full w-[350px] max-w-full bg-white shadow-lg rounded-l-xl overflow-hidden">
-            {/* Header */}
-            <div className="h-[20%] px-4 py-6 bg-green-200 text-black text-lg font-semibold text-center">
+        <div className="flex flex-col h-screen w-[350px] bg-slate-50 shadow-lg rounded-l-2xl overflow-hidden border border-slate-200">
+            {/* Header - Softer gradient */}
+            <div className="px-6 py-4 bg-gradient-to-r from-teal-500 to-emerald-500 text-white">
                 {user ? (
-                    <>
-                        <div>Good Morning, {user.user_metadata.display_name}</div>
-                        <div className="mt-2 text-sm">Red Crescent Worker</div>
-                        <button
-                            onClick={handleSignOut}
-                            className="mt-4 w-full py-2 bg-red-300 text-white font-medium rounded-lg hover:bg-red-400 transition-colors"
+                    <div className="space-y-2">
+                        <p className="text-lg font-semibold">{user.user_metadata.display_name}</p>
+                        <p className="text-sm text-teal-50">Red Crescent Worker</p>
+                        <button 
+                            onClick={handleSignOut} 
+                            className="mt-2 w-full py-2 bg-red-500 hover:bg-red-600 rounded-lg transition-all duration-200 text-sm font-medium shadow-sm hover:shadow-md"
                         >
                             Sign Out
                         </button>
-                    </>
+                    </div>
                 ) : (
-                    <>
-                        <div>Welcome, Guest</div>
-                        <button
-                            onClick={handleSignIn}
-                            className="mt-4 w-full py-2 bg-green-300 text-white font-medium rounded-lg hover:bg-green-400 transition-colors"
+                    <div className="space-y-2">
+                        <p className="text-lg font-semibold">Welcome, Guest</p>
+                        <button 
+                            onClick={handleSignIn} 
+                            className="mt-2 w-full py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-all duration-200 text-sm font-medium shadow-sm hover:shadow-md"
                         >
                             Sign In
                         </button>
-                    </>
-                )}
-            </div>
-
-            {/* Status Message */}
-            <div className="h-[10%] text-black px-4 py-4 text-center text-sm bg-yellow-200">
-                <p>There are currently no disasters in your immediate area</p>
-            </div>
-
-            {/* Location Search */}
-            <div className="h-[25%] w-full px-4 py-6 z-50 bg-green-100 text-black">
-                <div className="flex flex-row items-center space-x-2 w-full text-black">
-                    <input
-                        type="text"
-                        placeholder="Enter Location"
-                        value={location}
-                        onChange={handleInputChange}
-                        onKeyPress={handleKeyPress}
-                        className="flex-1 w-4 p-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-green-500 transition-all"
-                    />
-                    <button
-                        onClick={handleNavigate}
-                        className="p-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
-                    >
-                        Navigate
-                    </button>
-                </div>
-                {error && <div className="mt-2 text-red-500 text-sm">{error}</div>}
-                {results.length > 0 && (
-                    <div className="text-black mt-4 p-2 bg-gray-100 border rounded-lg">
-                        <p className="font-medium text-sm mb-2">Select a location:</p>
-                        <ol className="space-y-2">
-                            {results.map((result, index) => (
-                                <li
-                                    key={index}
-                                    className="p-3 bg-white border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-200"
-                                    onClick={() => handleSelectLocation(result.coords)}
-                                >
-                                    {result.display_name}
-                                </li>
-                            ))}
-                        </ol>
                     </div>
                 )}
             </div>
 
-            {/* Organizations */}
-            <div className="h-[20%] px-4 py-6 bg-green-100 text-black">
-                <h2 className="text-lg font-semibold">Other Organizations Operating Here:</h2>
-                <ul className="mt-2 space-y-1 text-sm">
-                    <li>Red Crescent</li>
-                    <li>UNHCR</li>
-                </ul>
+            {/* Status Message - Softer yellow */}
+            <div className="px-4 py-3 text-sm text-amber-800 bg-amber-50 border-y border-amber-100 font-medium">
+                No disasters in your immediate area
             </div>
 
-            {/* AI Suggestions */}
-            <div className="h-[25%] px-4 py-6 bg-green-100 text-black">
-                <h2 className="text-lg font-semibold">AI Assistant Suggestions:</h2>
-                <ul className="mt-2 space-y-1 text-sm">
-                    <li>For severe sandstorms, stay inside buildings and avoid windows.</li>
-                    <li>Check Msheireb, that is where a lot of people are grouped up.</li>
-                </ul>
+            {/* Scrollable content container */}
+            <div className="flex-1 overflow-y-auto">
+                {/* Location Search */}
+                <div className="p-4 bg-white border-b border-slate-100 text-black">
+                    <div className="flex space-x-2">
+                        <input
+                            type="text"
+                            placeholder="Enter Location"
+                            value={location}
+                            onChange={handleInputChange}
+                            className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
+                        />
+                        <button 
+                            onClick={handleNavigate} 
+                            className="p-2.5 bg-teal-500 text-white rounded-lg hover:bg-teal-600 transition-colors duration-200"
+                        >
+                            Go
+                        </button>
+                    </div>
+                    {error && <p className="mt-2 text-red-500 text-sm">{error}</p>}
+                    {results.length > 0 && (
+                        <ul className="mt-3 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                            {results.map((result, index) => (
+                                <li
+                                    key={index}
+                                    className="p-2 hover:bg-slate-100 cursor-pointer rounded-md text-sm transition-colors duration-150"
+                                    onClick={() => setDestinationCoords(result.coords)}
+                                >
+                                    {result.display_name}
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </div>
+
+                {/* Organizations */}
+                <div className="p-4 bg-white border-b border-slate-100">
+                    <h2 className="text-base font-semibold text-slate-800">Organizations Operating Here:</h2>
+                    <ul className="mt-2 space-y-2 text-sm text-slate-600">
+                        <li className="flex items-center">
+                            <span className="text-emerald-500 mr-2">✓</span>
+                            Red Crescent
+                        </li>
+                        <li className="flex items-center">
+                            <span className="text-emerald-500 mr-2">✓</span>
+                            UNHCR
+                        </li>
+                    </ul>
+                </div>
+
+                {/* AI Suggestions */}
+                <div className="p-4 bg-white">
+                    <h2 className="text-base font-semibold text-slate-800">AI Assistant Suggestions:</h2>
+                    <ul className="mt-2 space-y-2 text-sm text-slate-600">
+                        <li className="flex items-start">
+                            <span className="text-amber-500 mr-2">⚠️</span>
+                            <span>Stay inside during sandstorms, avoid windows.</span>
+                        </li>
+                        <li className="flex items-start">
+                            <span className="text-blue-500 mr-2">📍</span>
+                            <span>Check Msheireb; many people are gathered there.</span>
+                        </li>
+                    </ul>
+                </div>
             </div>
         </div>
     );
