@@ -1,0 +1,17 @@
+mapbox
+os
+pandas
+json5
+tabulate
+newsapi-python
+requests
+langchain
+langchain-community
+langchain_core
+time
+fastapi
+contextlib
+osmnx
+numpy
+geopy
+geopandas
