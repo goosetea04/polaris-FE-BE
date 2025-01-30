@@ -10,8 +10,8 @@ import { DangerZone,
   View,  
   Coordinates } from '@/Types';
 import { FeatureCollection, Point } from "geojson";
-import { distance, booleanPointInPolygon } from '@turf/turf';
-import { polygon, pointGrid, bbox} from '@turf/turf'
+import { distance } from '@turf/turf';
+import { polygon } from '@turf/turf'
 
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_PUBLIC_KEY || ''
 
@@ -194,19 +194,18 @@ export default function Map({ setDestinationCoords, destinationCoords }: MapProp
 
   // Place a marker when destinationCoords changes
   useEffect(() => {
+    if (destinationMarker.current) {
+      destinationMarker.current.remove();
+      destinationMarker.current = null;
+    }
+
     if (destinationCoords && map.current) {
-      // Remove existing destination marker
-      if (destinationMarker.current) {
-        destinationMarker.current.remove();
-      }
       const currentZoom = map.current?.getZoom();
 
-      // Add new destination marker
       destinationMarker.current = new mapboxgl.Marker({ color: '#FF0000' })
         .setLngLat(destinationCoords)
         .addTo(map.current);
 
-      // Optionally center the map on the destination
       map.current.flyTo({ center: destinationCoords, zoom: currentZoom });
     }
   }, [destinationCoords]);
@@ -499,10 +498,10 @@ export default function Map({ setDestinationCoords, destinationCoords }: MapProp
   return (
     <main className="h-screen w-full relative">
       <div ref={mapContainer} className="h-full w-full" />
-      <div className="absolute top-4 right-4 flex flex-col gap-2">
+      <div className="absolute top-4 left-4 flex flex-col gap-2">
         <button
           onClick={toggleDrawingMode}
-          className={`bg-${isDrawingMode === "Draw" ? 'red' : 'purple'}-500 text-white px-4 py-2 rounded-lg shadow-lg hover:bg-${isDrawingMode === "Draw" ? 'red' : 'purple'}-600 transition-colors`}
+          className={`bg-red-500 text-white px-4 py-2 rounded-lg shadow-lg hover:bg-red-700 transition-colors`}
         >
           {isDrawingMode === "Draw" ? 'Exit Drawing Mode' : 'Draw Danger Zone'}
         </button>
@@ -512,6 +511,14 @@ export default function Map({ setDestinationCoords, destinationCoords }: MapProp
             className="bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg hover:bg-blue-600 transition-colors"
           >
             Navigate
+          </button>
+        )}
+        {destinationCoords && (
+          <button
+            onClick={() => setDestinationCoords(null)}
+            className="bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg hover:bg-blue-600 transition-colors"
+          >
+            Clear Destination
           </button>
         )}
       </div>
