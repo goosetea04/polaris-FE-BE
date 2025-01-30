@@ -635,7 +635,11 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
-    CORSMiddleware
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow frontend origin
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all HTTP methods (GET, POST, etc.)
+    allow_headers=["*"],  # Allow all headers
 )
 
 @app.post("/dangerzones")

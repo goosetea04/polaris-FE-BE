@@ -26,3 +26,4 @@ export interface SafeRoutingOptions {
     numPerimeterPoints: number; // Number of points to generate around danger zone perimeter
     maxAttempts: number; // Maximum attempts to find a safe path
   }
+  

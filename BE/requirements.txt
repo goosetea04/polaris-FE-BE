@@ -16,3 +16,4 @@ geopandas
 tabulate
 langchain_community
 langchain_openai
+uvicorn

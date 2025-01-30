@@ -1,5 +1,5 @@
 "use client"
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import { User } from "@supabase/supabase-js";
@@ -9,12 +9,69 @@ interface SidebarProps {
     user: User | null;
 }
 
+interface AiAdvice {
+    vehicle_advice: string;
+    clothing_advice: string;
+    general_advice: string;
+}
+
 export default function Sidebar({ setDestinationCoords, user }: SidebarProps) {
     const router = useRouter();
     const supabase = createClientComponentClient();
     const [location, setLocation] = useState("");
     const [results, setResults] = useState<{ display_name: string; coords: [number, number] }[]>([]);
     const [error, setError] = useState("");
+    const [aiAdvice, setAiAdvice] = useState<AiAdvice | null>(null);
+    const [aiLoading, setAiLoading] = useState(true);
+    const [aiError, setAiError] = useState("");
+
+
+    useEffect(() => {
+        const fetchAiAdvice = async () => {
+            try {
+                setAiLoading(true);
+                const response = await fetch(
+                    `${process.env.NEXT_PUBLIC_ENDPOINT}/ai_advice`,
+                    { method: 'POST' }
+                );
+    
+                if (!response.ok) throw new Error('Failed to fetch advice');
+                
+                const rawData = await response.text();
+                console.log('Raw API Response:', rawData); // For debugging
+                
+                // First parse: Convert the stringified JSON to actual JSON string
+                const jsonString = JSON.parse(rawData);
+                
+                // Second parse: Convert the JSON string to object
+                const parsedData: AiAdvice = JSON.parse(jsonString);
+    
+                // Validate response
+                if (!parsedData.vehicle_advice || !parsedData.clothing_advice || !parsedData.general_advice) {
+                    throw new Error('Invalid AI advice format');
+                }
+    
+                setAiAdvice(parsedData);
+                setAiError("");
+            } catch (error) {
+                console.error('AI Advice Error:', error);
+                setAiError("Failed to load AI suggestions. Trying again...");
+                setAiAdvice(null);
+            } finally {
+                setAiLoading(false);
+            }
+        };
+    
+        fetchAiAdvice();
+        const interval = setInterval(fetchAiAdvice, 45000);
+        return () => clearInterval(interval);
+    }, []);
+
+    useEffect(() => {
+        console.log("AI Advice:", aiAdvice);
+        console.log("Clothing:", aiAdvice?.clothing_advice);
+        console.log("General:", aiAdvice?.general_advice);
+    }, [aiAdvice]);
 
     const handleSignOut = async () => {
         await supabase.auth.signOut();
@@ -141,14 +198,26 @@ export default function Sidebar({ setDestinationCoords, user }: SidebarProps) {
                 <div className="p-4 bg-white">
                     <h2 className="text-base font-semibold text-slate-800">AI Assistant Suggestions:</h2>
                     <ul className="mt-2 space-y-2 text-sm text-slate-600">
-                        <li className="flex items-start">
-                            <span className="text-amber-500 mr-2">⚠️</span>
-                            <span>Stay inside during sandstorms, avoid windows.</span>
-                        </li>
-                        <li className="flex items-start">
-                            <span className="text-blue-500 mr-2">📍</span>
-                            <span>Check Msheireb; many people are gathered there.</span>
-                        </li>
+                        {aiLoading && <li className="text-slate-400">Loading AI suggestions...</li>}
+                        
+                        {aiError && <li className="text-red-500">{aiError}</li>}
+                        
+                        {aiAdvice && !aiLoading && !aiError && (
+                            <>
+                                <li className="flex items-start">
+                                    <span className="mr-2 min-w-[24px]">🚗</span>
+                                    {aiAdvice.vehicle_advice}
+                                </li>
+                                <li className="flex items-start">
+                                    <span className="mr-2 min-w-[24px]">🧥</span>
+                                    {aiAdvice.clothing_advice}
+                                </li>
+                                <li className="flex items-start">
+                                    <span className="mr-2 min-w-[24px]">⚠️</span>
+                                    {aiAdvice.general_advice}
+                                </li>
+                            </>
+                        )}
                     </ul>
                 </div>
             </div>

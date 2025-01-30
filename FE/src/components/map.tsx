@@ -28,7 +28,7 @@ export default function Map({ setDestinationCoords, destinationCoords }: MapProp
   const destinationMarker = useRef<mapboxgl.Marker | null>(null)
   
   
-  const [isFetching, setIsFetching] = useState(false);
+  
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null)
   const [dangerZones, setDangerZones] = useState<DangerZone[]>([])
   const [loading, setLoading] = useState(true)
@@ -62,64 +62,12 @@ export default function Map({ setDestinationCoords, destinationCoords }: MapProp
     });
   };
 
-  const fetchDangerZones = async () => {
-    if (isFetching) return; // Prevent multiple simultaneous fetches
-    
-    try {
-      setIsFetching(true);
-      const response = await fetch('http://localhost:8000/get/');
-      const data = await response.json();
-      
-      // Remove existing danger zone drawings
-      if (draw.current) {
-        const features = draw.current.getAll().features;
-        features.forEach(feature => {
-          // Only attempt to delete if we have a valid string ID
-          const featureId = feature.id?.toString();
-          if (featureId) {
-            draw.current?.delete(featureId);
-          }
-        });
-      }
-
-      // Add new danger zone from API
-      if (map.current && draw.current) {
-        const newFeature: Feature = {
-          id: data.id,
-          type: 'Feature',
-          properties: {},
-          geometry: {
-            type: 'Polygon',
-            coordinates: data.coordinates
-          }
-        };
-        
-        draw.current.add(newFeature);
-        
-        // Update danger zones state
-        setDangerZones([{
-          id: data.id,
-          coordinates: data.coordinates
-        }]);
-      }
-    } catch (error) {
-      console.error('Error fetching danger zones:', error);
-    } finally {
-      setIsFetching(false);
-    }
-  };
 
   useEffect(() => {
     if (map.current && draw.current) {
       updateMapWithDangerZones();
     }
   }, [dangerZones]);
-
-  useEffect(() => {
-    fetchDangerZones();
-    const interval = setInterval(fetchDangerZones, 55000);
-    return () => clearInterval(interval);
-  }, []);
 
   const generateExclusionPoints = async (
     zone: DangerZone,
@@ -236,7 +184,7 @@ export default function Map({ setDestinationCoords, destinationCoords }: MapProp
       setError('Geolocation is not supported by your browser')
       setLoading(false)
     }
-  }, [])
+  }, []);
   
   const clearWaypointMarkers = () => {
     waypointMarkers.current.forEach(marker => marker.remove());
@@ -249,8 +197,8 @@ export default function Map({ setDestinationCoords, destinationCoords }: MapProp
       map.current = new mapboxgl.Map({
         container: mapContainer.current,
         style: 'mapbox://styles/mapbox/streets-v11',
-        center: userLocation,
-        zoom: 12
+        center: [146.313,-28.094],
+        zoom: 4
       })
   
       // Add navigation controls
@@ -270,11 +218,9 @@ export default function Map({ setDestinationCoords, destinationCoords }: MapProp
   
       // Add user location marker
       new mapboxgl.Marker({ color: '#0000FF' })
-        .setLngLat(userLocation)
+        .setLngLat([146.313,-28.094])
         .addTo(map.current)
       
-      
-  
       // Add click handler for setting destination
       map.current.on('click', (e) => {
         
