@@ -47,6 +47,7 @@ class updated_data():
     )
     stop = True
     running = False
+    active = False
 
     # KEYS AND ENV VARS
     LANGSMITH_ENDPOINT = os.getenv("LANGSMITH_ENDPOINT")
@@ -70,13 +71,25 @@ class updated_data():
     @classmethod
     def set_stop(cls, stop):
         """
-        Store .json ai_rec object as string var
+        Stop server from running
         """
         cls.stop = stop
 
     @classmethod
     def set_running(cls, state):
+        """
+        If began running server: True
+        else: False
+        """
         cls.running = state
+
+    @classmethod
+    def set_active(cls, state):
+        """
+        If outputs available: True
+        else: False
+        """
+        cls.active = state
 
     @classmethod
     def start_serverside(cls):
@@ -102,6 +115,8 @@ class updated_data():
             cls.set_ai_rec(gnd_[0])
             cls.set_poly(gnd_[1])
 
+            cls.set_active(True)
+
             if cls.stop: break
 
             if not cls.stop: time.sleep(45)
@@ -110,6 +125,7 @@ class updated_data():
     @classmethod
     def stop_serverside(cls):
         cls.set_running(False)
+        cls.set_active(False)
         cls.set_stop(True)
 
     @classmethod
@@ -131,6 +147,10 @@ class updated_data():
     @classmethod
     def get_running(cls):
         return cls.running
+
+    @classmethod
+    def get_active(cls):
+        return cls.active
 
     @classmethod
     def __get_model(cls):
@@ -623,14 +643,24 @@ async def getPolygons():
     """
     Returns a JSON of polygons as dangerzones based on a given identified disaster.
     """
-    return JSONResponse(content=zones.get_polygons())
+    if (zones.get_running() & zones.get_active()):
+        return JSONResponse(content=zones.get_polygons())
+    elif (zones.get_running() & (not zones.get_active())):
+        return JSONResponse(content={"message": "Please wait: Serverside running. . ."})
+    else:
+        return JSONResponse(content={"message": "Please run: start_serverside()"})
 
 @app.post("/ai_advice")
 async def getAIAdvice():
     """
     Returns a JSON of AI Recommendations based on a given identified disaster.
     """
-    return JSONResponse(zones.get_ai_rec())
+    if (zones.get_running() & zones.get_active()):
+        return JSONResponse(content=zones.get_ai_rec())
+    elif (zones.get_running() & (not zones.get_active())):
+        return JSONResponse(content={"message": "Please wait: Serverside running. . ."})
+    else:
+        return JSONResponse(content={"message": "Please run: start_serverside()"})
 
 @app.post("/start_serverside")
 async def start_serverside(background_tasks: BackgroundTasks):
