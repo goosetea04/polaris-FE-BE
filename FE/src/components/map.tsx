@@ -282,7 +282,7 @@ export default function Map({ setDestinationCoords, destinationCoords }: MapProp
         if (draw.current?.getMode() === 'simple_select') {
           const currentZoom = map.current?.getZoom();
           const coords: [number, number] = [e.lngLat.lng, e.lngLat.lat]
-            
+          setDestinationCoords(coords)
           // Remove existing destination marker if it exists
           if (destinationMarker.current) {
             destinationMarker.current.remove()
@@ -295,7 +295,6 @@ export default function Map({ setDestinationCoords, destinationCoords }: MapProp
           if (!currentZoom) return;
           map.current?.setZoom(currentZoom);
           
-          setDestinationCoords(coords)
           
         }
       })
@@ -315,7 +314,9 @@ export default function Map({ setDestinationCoords, destinationCoords }: MapProp
         }).filter((zone): zone is DangerZone => zone !== null);
 
         setDangerZones(prev => [...prev, ...newZones]);
-        setIsDrawingMode("Map"); 
+        setTimeout(() => {
+          setIsDrawingMode("Map");   
+        }, 1000);        
       });
         
   
@@ -493,7 +494,7 @@ export default function Map({ setDestinationCoords, destinationCoords }: MapProp
   }
 
   if (error) {
-    return <div className="h-screen flex items-center justify-center text-red-500">{error}</div>
+    return <div className="h-screen flex items-center justify-center text-green-800">{error}</div>
   }
   
   return (
@@ -502,14 +503,14 @@ export default function Map({ setDestinationCoords, destinationCoords }: MapProp
       <div className="absolute top-4 left-4 flex flex-col gap-2">
         <button
           onClick={toggleDrawingMode}
-          className={`bg-red-500 text-white px-4 py-2 rounded-lg shadow-lg hover:bg-red-700 transition-colors`}
+          className={`bg-gray-500 text-white px-4 py-2 rounded-lg shadow-lg hover:bg-gray-700 transition-colors`}
         >
           {isDrawingMode === "Draw" ? 'Exit Drawing Mode' : 'Draw Danger Zone'}
         </button>
         {destinationCoords && (
           <button
             onClick={getRoute}
-            className="bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg hover:bg-blue-600 transition-colors"
+            className="bg-teal-500 text-white px-4 py-2 rounded-lg shadow-lg hover:bg-emerald-500 transition-colors"
           >
             Navigate
           </button>
@@ -517,7 +518,7 @@ export default function Map({ setDestinationCoords, destinationCoords }: MapProp
         {destinationCoords && (
           <button
             onClick={() => setDestinationCoords(null)}
-            className="bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg hover:bg-blue-600 transition-colors"
+            className="bg-teal-500 text-white px-4 py-2 rounded-lg shadow-lg hover:bg-emerald-500 transition-colors"
           >
             Clear Destination
           </button>

@@ -33,12 +33,12 @@ export default function SignIn() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#66b539]">
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-r from-teal-500 to-emerald-500">
       <div className="w-full max-w-md space-y-8 bg-[#e8f7dd] p-8 rounded-lg shadow-2xl">
         <div className='flex flex-col items-center'>
-          <div className='flex flex-row text-black text-3xl font-bold'>
-            <p>Polaris</p>
-          </div>
+        <div className="flex flex-row bg-gradient-to-r from-teal-700 to-emerald-700 bg-clip-text text-transparent text-3xl font-bold">
+          <p>Polaris</p>
+        </div>
           <h2 className="text-center text-2xl font-medium text-[#151b1f]">Sign in to your account</h2>
           <div className="relative py-4">            
             <div className="relative flex justify-center text-sm">
@@ -91,7 +91,7 @@ export default function SignIn() {
 
           <button
             type="submit"
-            className="w-full bg-[#66b539] text-white py-2 px-4 rounded-md hover:bg-[#76c549] disabled:opacity-50"
+            className="w-full bg-teal-500 text-white py-2 px-4 rounded-md hover:bg-emerald-500 disabled:opacity-50"
             disabled={loading}
           >
             {loading ? 'Currently signing in...' : 'Sign In'}
