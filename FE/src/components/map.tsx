@@ -26,14 +26,68 @@ export default function Map({ setDestinationCoords, destinationCoords }: MapProp
   const map = useRef<mapboxgl.Map | null>(null)
   const draw = useRef<MapboxDraw | null>(null)
   const destinationMarker = useRef<mapboxgl.Marker | null>(null)
-  
-  
+  const unLabelRef = useRef<mapboxgl.Popup | null>(null)
   
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null)
   const [dangerZones, setDangerZones] = useState<DangerZone[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isDrawingMode, setIsDrawingMode] = useState<View>("Map")
+
+  const addUNPolygon = (map: mapboxgl.Map) => {
+    // Add source for UN polygon
+    map.addSource('un-area', {
+      'type': 'geojson',
+      'data': {
+        'type': 'Feature',
+        'properties': {},
+        'geometry': {
+          'type': 'Polygon',
+          'coordinates': [[
+            [151.23349,-33.88233],
+            [151.27742,-33.87606],
+            [151.25872,-33.91023],
+            [151.21668,-33.90553],
+            [151.23349,-33.88233]
+          ]]
+        }
+      }
+    });
+
+    // Add fill layer
+    map.addLayer({
+      'id': 'un-area-fill',
+      'type': 'fill',
+      'source': 'un-area',
+      'layout': {},
+      'paint': {
+        'fill-color': '#0066ff',
+        'fill-opacity': 0.3
+      }
+    });
+
+    // Add outline layer
+    map.addLayer({
+      'id': 'un-area-outline',
+      'type': 'line',
+      'source': 'un-area',
+      'layout': {},
+      'paint': {
+        'line-color': '#0066ff',
+        'line-width': 2
+      }
+    });
+
+    // Add persistent label
+    const center: [number, number] = [151.2165, -33.8965];
+    unLabelRef.current = new mapboxgl.Popup({
+      closeButton: false,
+      closeOnClick: false
+    })
+      .setLngLat(center)
+      .setHTML('<div class="font-bold text-blue-600">UNHCR</div>')
+      .addTo(map);
+  };
 
   const updateMapWithDangerZones = () => {
     if (!map.current || !draw.current) return;
@@ -94,10 +148,7 @@ export default function Map({ setDestinationCoords, destinationCoords }: MapProp
         }
       }
     });
-  
-    // 2. Generate sparser grid points inside polygon
     
-  
     // 3. Spatial deduplication using precision-based hashing
     const snappedPoints: string[] = [];
   const grid = new Set<string>();
@@ -172,7 +223,7 @@ export default function Map({ setDestinationCoords, destinationCoords }: MapProp
       navigator.geolocation.getCurrentPosition(
         (position) => {
           const { latitude, longitude } = position.coords
-          setUserLocation([longitude, latitude])
+          setUserLocation([151.20800,-33.90117])
           setLoading(false)
         },
         (error) => {
@@ -197,7 +248,7 @@ export default function Map({ setDestinationCoords, destinationCoords }: MapProp
       map.current = new mapboxgl.Map({
         container: mapContainer.current,
         style: 'mapbox://styles/mapbox/streets-v11',
-        center: [146.313,-28.094],
+        center: userLocation,
         zoom: 4
       })
   
@@ -218,8 +269,12 @@ export default function Map({ setDestinationCoords, destinationCoords }: MapProp
   
       // Add user location marker
       new mapboxgl.Marker({ color: '#0000FF' })
-        .setLngLat([146.313,-28.094])
+        .setLngLat([151.20800,-33.90117])
         .addTo(map.current)
+      
+      map.current.on('load', () => {
+        addUNPolygon(map.current!);
+      });
       
       // Add click handler for setting destination
       map.current.on('click', (e) => {
