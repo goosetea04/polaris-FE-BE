@@ -112,7 +112,7 @@ export default function Sidebar({ setDestinationCoords, user }: SidebarProps) {
     };
 
     return (
-        <div className="flex flex-col h-screen w-[350px] bg-slate-50 shadow-lg rounded-l-2xl overflow-hidden border border-slate-200">
+        <div className="flex flex-col h-screen w-[350px] bg-slate-50 shadow-lg overflow-hidden border border-slate-200">
             {/* Header - Softer gradient */}
             <div className="px-6 py-4 bg-gradient-to-r from-teal-500 to-emerald-500 text-white">
                 {user ? (

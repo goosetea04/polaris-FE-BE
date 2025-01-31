@@ -44,11 +44,11 @@ export default function Map({ setDestinationCoords, destinationCoords }: MapProp
         'geometry': {
           'type': 'Polygon',
           'coordinates': [[
-            [151.23349,-33.88233],
-            [151.27742,-33.87606],
-            [151.25872,-33.91023],
-            [151.21668,-33.90553],
-            [151.23349,-33.88233]
+            [144.82513, -37.64718],
+            [144.85757, -37.67488],
+            [144.87850, -37.64868],
+            [144.85997, -37.63714],
+            [144.84761, -37.65655]
           ]]
         }
       }
@@ -79,7 +79,7 @@ export default function Map({ setDestinationCoords, destinationCoords }: MapProp
     });
 
     // Add persistent label
-    const center: [number, number] = [151.2165, -33.8965];
+    const center: [number, number] = [144.85980, -37.64433];
     unLabelRef.current = new mapboxgl.Popup({
       closeButton: false,
       closeOnClick: false
@@ -223,7 +223,7 @@ export default function Map({ setDestinationCoords, destinationCoords }: MapProp
       navigator.geolocation.getCurrentPosition(
         (position) => {
           const { latitude, longitude } = position.coords
-          setUserLocation([151.20800,-33.90117])
+          setUserLocation([144.97731, -37.67816])
           setLoading(false)
         },
         (error) => {
@@ -269,7 +269,7 @@ export default function Map({ setDestinationCoords, destinationCoords }: MapProp
   
       // Add user location marker
       new mapboxgl.Marker({ color: '#0000FF' })
-        .setLngLat([151.20800,-33.90117])
+        .setLngLat([144.97731, -37.67816])
         .addTo(map.current)
       
       map.current.on('load', () => {
