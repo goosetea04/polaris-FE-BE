@@ -7,6 +7,8 @@ from newsapi import NewsApiClient
 import requests
 from langchain_core.output_parsers import JsonOutputParser
 from langchain.prompts import PromptTemplate
+from datetime import datetime
+import pytz
 
 """
 Older imports are commented out.
@@ -28,6 +30,8 @@ from fastapi import BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import osmnx as ox
+import shapely.geometry as geom
+from shapely.geometry import Polygon
 import time
 from contextlib import asynccontextmanager
 import numpy
@@ -37,8 +41,9 @@ import geopandas as gpd
 load_dotenv()
 
 class updated_data():
-    polygons = {}
+    polygons = []
     ai_rec = {}
+    predictions = []
     __model = ChatOpenAI(
         model_name = "gpt-4o-mini",
         temperature = 0.2,
@@ -56,10 +61,11 @@ class updated_data():
     
     @classmethod
     def set_poly(cls, poly_):
-        """
-        Store .geojson polygons object as string var
-        """
         cls.polygons = poly_
+
+    @classmethod
+    def set_pred(cls, pred):
+        cls.predictions = pred
 
     @classmethod
     def set_ai_rec(cls, ai_):
@@ -109,17 +115,29 @@ class updated_data():
             # params: md_twitter, dummy_government_data, data (NewsAPI)
             outs_ = list(cls.prompt_ai(cls.__get_model(), dt_[0], dt_[1], dt_[2]))
 
-            # params: o_df, o_twit_df, dummy_government_data, output_recs
-            gnd_ = list(cls.gen_polygons(outs_[0], outs_[1], dt_[1], outs_[2]))
+            # params: o_df, o_twit_df, dummy_government_data, output_recs, code
+            gnd_ = list(cls.gen_polygons(outs_[0], outs_[1], dt_[1], outs_[2], 0))
 
             cls.set_ai_rec(gnd_[0])
-            cls.set_poly(gnd_[1])
+
+            # Predict disaster type = outs_[0]['disaster_type'] "disaster_type" : o_df['disaster_type'][0]
+            prds_ = cls.predict(cls.__get_model(), outs_[1], dt_[1], outs_[0]['disaster_type'][0])
+
+            prds_poly_ = list(cls.gen_polygons(prds_, outs_[1], dt_[1], outs_[2], 1))
+
+            poly_final = cls.reduce(gnd_[1], 40)
+            pred_final = cls.reduce(prds_poly_[1], 40)
+
+            cls.set_poly(poly_final)
+            cls.set_pred(pred_final)
 
             cls.set_active(True)
 
             if cls.stop: break
 
-            if not cls.stop: time.sleep(45)
+            if not cls.stop: 
+                print("\n>>>\tsuccessfully ran cycle.")
+                time.sleep(45)
         print("\n\tServer successfully stopped.\n")
 
     @classmethod
@@ -143,6 +161,10 @@ class updated_data():
             cls.ai_rec : AI recommendations in the form of string
         """
         return cls.ai_rec
+
+    @classmethod
+    def get_predictions(cls):
+        return cls.predictions
 
     @classmethod
     def get_running(cls):
@@ -291,7 +313,7 @@ class updated_data():
         parser_rec_agent = JsonOutputParser(pydantic_object=tds_rec_agent)
         tmplt_rec_agent = """
         ---
-        You are an advanced information extraction assistant specializing in analyzing articles about natural disasters. Your task is to extract specific data fields from the provided JSON article and structure them into the `tds_data_agent` schema. Carefully follow the instructions and requirements below to ensure accuracy and completeness.
+        You are an advanced meteoriligist consultant analyzing data about current natural disasters. Your task is to conclude recommendations from the provided JSON article and structure them into the `tds_rec_agent` schema. Carefully follow the instructions and requirements below to ensure accuracy and completeness.
 
         Use the following format instructions:
         {format_instructions}
@@ -300,15 +322,15 @@ class updated_data():
         ### INPUT FORMAT  
         You will receive an article in JSON format with the following fields:  
 
-        - `twitter insight` : is a bunch of twitter posts stored in Markdown format : {twitter_insight}
+        - `twitter_insight` : is a bunch of twitter posts stored in Markdown format : {twitter_insight}
+        - `disaster_type` : the type of disaster you will be performing recommendations on : {disaster_type}
 
         ---
 
         ### TASK INSTRUCTIONS 
 
         1. **Analyze for Disaster Context**:  
-        Each field in the `OUTPUT FORMAT` must correspond to the type of natural disaster(s) described in the `twitter_insight` content. Look for:
-        - The type of disaster (e.g., flood, wildfire, earthquake, hurricane).
+        Each field in the `OUTPUT FORMAT` must correspond to the type of natural disaster(s) described in the `twitter_insight` content and the given `disaster_type`. Look for:
         - How the disaster affects mobility, clothing needs, and general survival recommendations.
 
         2. **Field-Specific Extraction Guidance**:
@@ -335,9 +357,9 @@ class updated_data():
         ### OUTPUT FORMAT TEMPLATE  
 
         {{
-            "vehicle_advice": "{{Type of land vehicle recommendation according to disaster described (e.g., 4-Wheeler large vehicle, 4-Wheeler container trucks, small vehicles, motorbikes)}}",
-            "clothing_advice": "{{General clothing advice according to disaster described (e.g., Warm clothes, Fire-proof clothes, Water-proof clothes)}}",
-            "general_advice": "{{General advice for users to take into account regarding the disaster. How unpredictable the disaster is, potential for loss of life, how fast the disaster spreads, etc. *No more than 2 sentences*}}",
+            "vehicle_advice": "Type of land vehicle recommendation according to disaster described (e.g., 4-Wheeler large vehicle, 4-Wheeler container trucks, small vehicles, motorbikes)",
+            "clothing_advice": "General clothing advice according to disaster described (e.g., Warm clothes, Fire-proof clothes, Water-proof clothes)",
+            "general_advice": "General advice for users to take into account regarding the disaster. How unpredictable the disaster is, potential for loss of life, how fast the disaster spreads, etc. *No more than 2 sentences*",
         }}
 
         ---
@@ -388,7 +410,7 @@ class updated_data():
             - Flood  
             - Earthquake  
             - Hurricane  
-            - Wildfire  
+            - Wildfire (or Bushfire)  
             - Tornado  
             - Landslide  
         - Use lowercase strings (e.g., "flood", "earthquake") for the `disaster_type` field.  
@@ -417,12 +439,12 @@ class updated_data():
         ### OUTPUT FORMAT TEMPLATE  
 
         {{
-            "title": "{{Extracted title from the JSON input}}",
-            "location": "{{Location Identified }}",
-            "disaster_type": "{{natural disaster type (e.g., bushfire, flood, wildfire)}}",
-            "emergency_no": "{{emergency contact number if available, else empty string}}",
-            "danger_level": {{integer between 1 and 5 based on the danger scale}},
-            "summary": "{{Two-sentence summary of the natural disaster's performance}}"
+            "title": "Extracted title from the JSON input",
+            "location": "Location Identified ",
+            "disaster_type": "natural disaster type (e.g., bushfire, flood, wildfire)",
+            "emergency_no": "emergency contact number if available, else empty string",
+            "danger_level": integer between 1 and 5 based on the danger scale,
+            "summary": "Two-sentence summary of the natural disaster's performance"
         }}
 
         ---
@@ -432,7 +454,7 @@ class updated_data():
 
         tmplt_twit_agent = """
         ---
-        You are an advanced information extraction assistant specializing in analyzing Twitter data to detect discussions about natural disasters in specific government-monitored locations. Your task is to analyze tweets and determine if any locations in the provided `gov_data` are dangerous. The extracted information must be structured into the `gov_twitter_data_agent` schema. Follow the instructions carefully to ensure accurate results.
+        You are an advanced information extraction assistant specializing in analyzing Twitter data to detect discussions about natural disasters in specific government-monitored locations. Your task is to analyze tweets and determine if any locations in the provided `gov_data` are dangerous. The extracted information must be structured into the `tds_twit_agent` schema. Follow the instructions carefully to ensure accurate results.
 
         Use the following format instructions:
         {format_instructions}
@@ -499,26 +521,27 @@ class updated_data():
                     outputs.append(output)
                 num_articles += 1
 
-                # Max of 5 articles (for MVP - token usage limiting)
+                # Max of 5 articles (for token usage limiting)
                 if num_articles > 5:
                     break
             
+            # OUTPUTS TO DF
+            o_df = pd.DataFrame(outputs)
+            
             # Analyze twitter and ensure correlation with Government insight
             prompt_twitter_agent = PromptTemplate(
-                    template=tmplt_twit_agent,
-                    input_variables=[],
-                    partial_variables={
-                        "format_instructions" : parser_twit_agent.get_format_instructions(),
-                        "gov_data" : dummy_government_addys,
-                        "twitter_data" : md_twitter
-                    }
-                )
+                template=tmplt_twit_agent,
+                input_variables=[],
+                partial_variables={
+                    "format_instructions" : parser_twit_agent.get_format_instructions(),
+                    "gov_data" : dummy_government_addys,
+                    "twitter_data" : md_twitter
+                }
+            )
             
             chain_twit_agent = prompt_twitter_agent | model | parser_twit_agent
             output_twit = chain_twit_agent.invoke({})
 
-            # OUTPUTS TO DF
-            o_df = pd.DataFrame(outputs)
             # Ensure it's always a list of dictionaries
             if isinstance(output_twit, dict):
                 output_twit = [output_twit]  # Convert single dictionary to a list
@@ -532,7 +555,7 @@ class updated_data():
                     partial_variables={
                         "format_instructions" : parser_rec_agent.get_format_instructions(),
                         "twitter_insight" : o_twit_df.to_markdown(),
-                        "news_insight" : o_df.to_markdown()
+                        "disaster_type" : o_df['disaster_type'][0]
                     }
                 )
             
@@ -545,7 +568,7 @@ class updated_data():
         return (o_df, o_twit_df, output_rec)
 
     @classmethod
-    def gen_polygons(cls, o_df, o_twit_df, dummy_government_addys, output_rec):
+    def gen_polygons(cls, o_df, o_twit_df, dummy_government_addys, output_rec, code):
         """
         Generate list of polygons and ai recommendation as geojson and json file
         Outputs:
@@ -556,42 +579,220 @@ class updated_data():
         polygons_dict = {
             "twitter" : [],
             "gov" : [],
-            "news" : []
+            "gen" : []
         }
+
+        polygons_gdf = gpd.GeoDataFrame(columns=['geometry'], geometry='geometry')
 
         for addy in o_df['location']:
             try:
                 polygon = ox.geocode_to_gdf(addy)
-                polygons_dict['news'].append(polygon)
+                polygons_dict['gen'].append(polygon)
             except:
                 continue
 
-        for addy in o_twit_df['location']:
-            try:
-                polygon = ox.geocode_to_gdf(addy)
-                polygons_dict['twitter'].append(polygon)
-            except:
-                continue
+        if code == 0:
+            for addy in o_twit_df['location']:
+                try:
+                    polygon = ox.geocode_to_gdf(addy)
+                    polygons_dict['twitter'].append(polygon)
+                except:
+                    continue
 
-        for addy in dummy_government_addys:
-            try:
-                polygon = ox.geocode_to_gdf(addy)
-                polygons_dict['gov'].append(polygon)
-            except:
-                continue
+            for addy in dummy_government_addys:
+                try:
+                    polygon = ox.geocode_to_gdf(addy)
+                    polygons_dict['gov'].append(polygon)
+                except:
+                    continue
 
         # Save the polygon as a GeoJSON file
-        polygons_gdf = gpd.GeoDataFrame(pd.concat(polygons_dict['gov'], ignore_index=True))
+            for dct in polygons_dict:
+                if len(polygons_dict[dct]) > 0 and len(polygons_dict[dct]) < 40:
+                    polygons_gdf = gpd.GeoDataFrame(pd.concat(polygons_dict[dct], ignore_index=True))
 
-        polygons_gjson = polygons_gdf.to_json()
-
-        plgns_d = json.loads(polygons_gjson)
+        if code == 1 and len(polygons_dict['gen']) > 0 and len(polygons_dict['gen']) < 40:
+            polygons_gdf = gpd.GeoDataFrame(pd.concat(polygons_dict['gen'], ignore_index=True))
 
         ai_advice = json.dumps(output_rec, indent=4)
 
-        print(type(plgns_d))
+        return (ai_advice, polygons_gdf)
 
-        return (ai_advice, plgns_d)
+    @classmethod
+    def predict(cls, model, t_insight, g_insight, d_type):
+        parser_prediction_agent = JsonOutputParser(pydantic_object=tds_prediction_agent)
+        tmplt_prediction_agent = """
+        ---
+
+        You are an advanced information extraction assistant specializing in analyzing articles about natural disasters. Your task is to extract specific data fields from the provided JSON article and structure them into the `tds_data_agent` schema. Carefully follow the instructions and requirements below to ensure accuracy and completeness.
+
+        You are based in Melbourne, Victoria, Australia and only think about predictions within specific areas of Melbourne, victoria, Australia.
+
+        Use the following format instructions:
+        {format_instructions}
+
+        ---
+
+        ### INPUT FORMAT  
+        You will receive an article in JSON format with the following fields:  
+
+        - `twitter_insight` : is a bunch of twitter posts stored in Markdown format : {twitter_insight}
+        - `gov_insight` : are confirmed locations of the current disaster : {gov_insight}
+        - `datetime` : is the datetime formatted as YYYY-MM-DD HH:MM:SS.ssssss+10:00 : {datetime}
+        - `disaster_type` : is the type of natural disaster actively occurring : {disaster_type}
+
+        ---
+
+        ### TASK INSTRUCTIONS 
+
+        The context of area we are discussing is areas within: Melbourne, Victoria, Australia
+
+        Your objective is to analyze the provided insights and accurately predict the next possible location(s) where the current disaster may spread. Follow these steps carefully:
+
+        1. **Understand the Context**  
+        - Extract and account for the locations of active disasters provided by `gov_insight`.
+        - Review `twitter_insight` for real-time updates and public observations regarding disaster movement or patterns.  
+        - Use `datetime` to establish the timeline of the disaster’s progression. 
+        - Recognize the type of disaster (`disaster_type`) and consider how such disasters typically spread.
+
+        2. **Predict Future Locations**  
+        - Based on the extracted data, determine the most probable locations where the disaster will move next.
+        - Consider geographical factors, past movement patterns, and any new emerging insights.  
+        - Provide precise and logically inferred predictions on where the disaster may spread.
+
+        3. **Estimate Time of Arrival** 
+        - Determine the estimated time (`predicted_time`) in hours and minutes until the disaster reaches the predicted locations.  
+        - Ensure consistency between the predicted locations and their respective estimated times.
+
+        4. **Calculate Time of Impact**
+        - Use the provided `datetime` as a reference point.  
+        - Add the `predicted_time` value to determine the expected `time_of_impact` for each predicted location.
+
+        5. **Output the Results**  
+        - Format your response strictly according to the provided output template.  
+        - Ensure clarity, accuracy, and consistency in your predictions.
+
+        ---
+
+        ### OUTPUT FORMAT TEMPLATE  
+
+        {{
+            "location" : "{{The next predicted location for the current disaster and where it's likely to spread to.}}",
+            "predicted_time" : "{{Predicted number of [Hours]h, [Minutes]m until the disaster reaches your predicted location. Make sure the indexes match up to the location you are referring to.}}",
+            "time_of_impact" : "{{Return the actual time of impact by getting current time from inputs and adding that to the predicted_time output you generated}}"
+        }}
+
+        ---
+
+        By following these instructions, you will accurately extract all necessary information for the `tds_predicted_agent` schema and provide high-quality, structured data.
+        """
+
+        # current AEST date-time now
+        aest = pytz.timezone("Australia/Sydney")
+        current_aest_time = datetime.now(aest)
+
+        print(f"Predicting future {d_type} polygons. . .")
+        with get_openai_callback() as cb:
+            # Analyze twitter and ensure correlation with Government insight
+            prompt_prediction_agent = PromptTemplate(
+                template=tmplt_prediction_agent,
+                input_variables=[],
+                partial_variables={
+                    "format_instructions" : parser_prediction_agent.get_format_instructions(),
+                    "twitter_insight" : t_insight.to_markdown(),
+                    "gov_insight" : g_insight,
+                    "datetime" : current_aest_time,
+                    "disaster_type" : d_type
+                }
+            )
+            
+            chain_prediction_agent = prompt_prediction_agent | model | parser_prediction_agent
+            output_prediction = chain_prediction_agent.invoke({})
+
+            # Ensure it's always a list of dictionaries
+            if isinstance(output_prediction, dict):
+                output_prediction = [output_prediction]  # Convert single dictionary to a list
+
+            # Convert list of dictionaries to DataFrame
+            o_pred_df = pd.DataFrame(output_prediction)
+
+            print(cb)
+
+        return o_pred_df
+
+    @classmethod
+    def reduce(cls, polygons_, max_coords):
+        ply_formatted = []
+
+        if polygons_.empty:
+            return "No Danger detected."
+
+        # Iterate over each row in the GeoDataFrame
+        for _, feature in polygons_.iterrows():
+            polygons_unf = []  # Reset for each feature
+
+            # Check if the geometry is a MultiPolygon or a Polygon
+            geometry = feature["geometry"]
+            
+            if geometry.geom_type == "MultiPolygon":
+                # Handle MultiPolygon geometry (multiple polygons in one feature)
+                for multipolygon in geometry.geoms:  # Use .geoms to get individual polygons
+                    # Each multipolygon is a Polygon object
+                    if multipolygon.geom_type == "Polygon":
+                        # Access the coordinates of the polygon (exterior)
+                        polygons_unf.append(list(multipolygon.exterior.coords))
+            elif geometry.geom_type == "Polygon":
+                # Handle simple Polygon geometry
+                polygons_unf.append(list(geometry.exterior.coords))
+
+            # Append the processed polygons to the result list
+            ply_formatted.append(cls.douglas_peucker(polygons_unf, max_coords))
+
+        return ply_formatted
+
+    @classmethod
+    def douglas_peucker(cls, coords, max_points):
+        """
+        Simplifies polygons and enforces a maximum number of coordinates per polygon.
+        
+        Args:
+            coords (list): List of polygons, where each polygon is a list of [longitude, latitude] points.
+            max_points (int): Maximum number of coordinates allowed per polygon.
+        
+        Returns:
+            list: List of simplified polygon coordinates.
+        """
+        tolerance = 0.006  # This value can be adjusted based on your requirements
+        simplified_polygons = []
+
+        # Iterate over each polygon in the coords list
+        for poly in coords:
+            # Ensure the poly is not an empty list or a list containing empty lists
+            if not poly:
+                print("Skipping invalid or empty polygon.")
+                continue  # Skip invalid polygons
+
+            # Convert the polygon (list of [longitude, latitude]) to a Shapely Polygon
+            polygon = Polygon(poly)
+            # Convert the polygon (list of [longitude, latitude]) to a Shapely Polygon
+
+            # Step 1: Simplify the polygon using the specified tolerance
+            simplified_polygon = polygon.simplify(tolerance)
+
+            # Step 2: Get simplified coordinates
+            simplified_coords = list(simplified_polygon.exterior.coords)
+
+            # Step 3: If the simplified polygon exceeds max_points, downsample the coordinates
+            if len(simplified_coords) > max_points:
+                step = len(simplified_coords) // max_points  # Evenly space the points
+                reduced_coords = simplified_coords[::step][:max_points]  # Keep only max_points
+            else:
+                reduced_coords = simplified_coords  # Keep the simplified polygon as is
+
+            # Add the reduced polygon to the result list
+            simplified_polygons.append(reduced_coords)
+
+        return simplified_polygons
 
     @classmethod
     def __del__(self):
@@ -626,6 +827,11 @@ class tds_rec_agent(BaseModel):
     clothing_advice : str = Field(description="")
     general_advice : str = Field(description="")
 
+class tds_prediction_agent(BaseModel):
+    location : str = Field(description="")
+    predicted_time : str = Field(description="")
+    time_of_impact : str = Field(description="")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -640,12 +846,21 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Allow frontend origin
-    allow_credentials=True,
-    allow_methods=["*"],  # Allow all HTTP methods (GET, POST, etc.)
-    allow_headers=["*"],  # Allow all headers
+    CORSMiddleware
 )
+
+@app.post("/predictions")
+async def getPolygons():
+    """
+    Returns a JSON of predicted polygons as dangerzones based on a given identified disaster.
+    """
+    if (zones.get_running() & zones.get_active()):
+        return JSONResponse(content=zones.get_predictions())
+    elif (zones.get_running() & (not zones.get_active())):
+        return JSONResponse(content={"message": "Please wait: Serverside running. . ."})
+    else:
+        return JSONResponse(content={"message": "Please run: start_serverside()"})
+
 
 @app.post("/dangerzones")
 async def getPolygons():
