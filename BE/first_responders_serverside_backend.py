@@ -189,9 +189,7 @@ class updated_data():
 
         dummy_government_addys = [
             "You Yangs Regional Park, Little River, VIC, Australia",
-            "Yarra Ranges National Park, VIC, Australia",
-            "Plenty Gorge Park, South Morang, VIC, Australia",
-            "Churchill National Park, Rowville, VIC, Australia"
+            "Yarra Ranges National Park, VIC, Australia"
         ]
 
         dummy_twitter_data = [
@@ -521,6 +519,11 @@ class updated_data():
 
             # OUTPUTS TO DF
             o_df = pd.DataFrame(outputs)
+            # Ensure it's always a list of dictionaries
+            if isinstance(output_twit, dict):
+                output_twit = [output_twit]  # Convert single dictionary to a list
+
+            # Convert list of dictionaries to DataFrame
             o_twit_df = pd.DataFrame(output_twit)
 
             prompt_rec_agent = PromptTemplate(
@@ -578,15 +581,17 @@ class updated_data():
                 continue
 
         # Save the polygon as a GeoJSON file
-        for i in range(3):
-            polygons_gdf = gpd.GeoDataFrame(pd.concat(polygons_dict['gov'], ignore_index=True))
+        polygons_gdf = gpd.GeoDataFrame(pd.concat(polygons_dict['gov'], ignore_index=True))
 
-        polygons_gdf.to_file("polygons.geojson", driver="GeoJSON")
         polygons_gjson = polygons_gdf.to_json()
+
+        plgns_d = json.loads(polygons_gjson)
 
         ai_advice = json.dumps(output_rec, indent=4)
 
-        return (ai_advice, polygons_gjson)
+        print(type(plgns_d))
+
+        return (ai_advice, plgns_d)
 
     @classmethod
     def __del__(self):
